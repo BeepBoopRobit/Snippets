@@ -47,13 +47,21 @@ function Invoke-MorphRest {
 
     [hashtable] $header = @{"Authorization" = "BEARER $accessToken" }
     [string]$url = "https://" + $applianceHostname + "/api/" + $apiEndpoint
-    [array] $responseStream = (Invoke-WebRequest -SkipCertificateCheck -Method $method -Uri $url -Headers $header -Body $jsonPayload).content | ConvertFrom-Json
-
+    if ($PSVersionTable.PSEdition -eq "Core") {
+        [array] $responseStream = (Invoke-WebRequest -SkipCertificateCheck -Method $method -Uri $url -Headers $header -Body $jsonPayload).content | ConvertFrom-Json
+    }
+    else {
+        if ($jsonPayload) {
+        
+            [array] $responseStream = (Invoke-WebRequest -Method $method -Uri $url -Headers $header -Body $jsonPayload).content | ConvertFrom-Json
+        }
+        else {
+            [array] $responseStream = (Invoke-WebRequest -Method $method -Uri $url -Headers $header).content | ConvertFrom-Json
+        }
+    }
     return $responseStream
 }
 $endpoint = "networks"
-
-
 
 $allNetworks = (Invoke-MorphRest -applianceHostname $applianceHostname -apiEndpoint $endpoint -method "get" -accessToken $accessToken -jsonPayload "").networks
 
