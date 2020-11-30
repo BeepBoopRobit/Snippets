@@ -19,7 +19,11 @@ param (
     # secondary dns server
     [Parameter(Mandatory = $false)]
     [string]
-    $secondaryDns
+    $secondaryDns,
+    # live switch
+    [Parameter(Mandatory=$false)]
+    [switch]
+    $live
 )
 function Invoke-MorphRest {
     param (
@@ -64,25 +68,32 @@ function Invoke-MorphRest {
 $endpoint = "networks"
 
 $allNetworks = (Invoke-MorphRest -applianceHostname $applianceHostname -apiEndpoint $endpoint -method "get" -accessToken $accessToken -jsonPayload "").networks
-
+$allPools = (Invoke-MorphRest -applianceHostname $applianceHostname -apiEndpoint ($endpoint + "/pools") -method "get" -accessToken $accessToken).networkpools
 foreach ($net in $allNetworks) {
     
     $net = $net | Select-Object * | Where-Object { $_.zone.name -eq $zoneName }
     if ($net) {
-    
+        
         $payload = @{
             network = @{
             }
         }
+
         $pattern = [Regex]::new("(?:\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b)(.*)")
         $netInfo = $pattern.Match($net.name).Value
         if ($netInfo) {
             $gateway = $netInfo -replace "(?:\d-.*)", "1"
             $cidr = $netInfo -replace "-", "/"
+
+            if($cidr){
+                $assignPool = $allPools | ForEach-Object{$_  | Select-Object id, name | Where-Object {$_.name.contains($cidr)}}
+            }
+            
         }
+        
         ### INSERT NEEDLESS COMPLEXITY HERE ###
 
-        $p = @("dnsPrimary", "dnsSecondary", "gateway", "cidr")
+        $p = @("dnsPrimary", "dnsSecondary", "gateway", "cidr", "pool")
         switch ($p) {
             $p[0] {
                 $payload.network.Add($p[0], $primaryDns)
@@ -96,6 +107,13 @@ foreach ($net in $allNetworks) {
             $p[3] {
                 $payload.network.Add($p[3], $cidr)
             }
+            $p[4]{
+                $payload.network.Add(
+                    $p[4], @{
+                        id = $assignPool.id
+                    }
+                 )
+            }
         }
 
         # $payload.network.Add("dnsPrimary", "")
@@ -103,9 +121,11 @@ foreach ($net in $allNetworks) {
         # $payload.network.Add("gateway", "")
 
         ### END NEEDLESS COMPLEXITY ###
-
-        $response = Invoke-MorphRest -applianceHostname $applianceHostname -apiEndpoint ($endpoint + "/" + $net.id) -method "put" -accessToken $accessToken -jsonPayload ($payload | ConvertTo-Json)
+        if($live){
+            $response = Invoke-MorphRest -applianceHostname $applianceHostname -apiEndpoint ($endpoint + "/" + $net.id) -method "put" -accessToken $accessToken -jsonPayload ($payload | ConvertTo-Json)
+        }
     }
     $cidr = $null
     $gateway = $null
+    $assignPool = $null
 } 
